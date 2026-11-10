@@ -19,6 +19,7 @@ import { calculateRemainingRest, discardActiveWorkout, finishWorkout, saveActive
 import { cancelRestNotification, restCompletedHaptic, scheduleRestNotification, setCompletedHaptic } from '../services/mobile'
 import type { ActiveWorkout, Exercise } from '../types'
 import { formatDuration, formatMuscle } from '../utils/format'
+import { getExerciseIllustrationUrl } from '../utils/exerciseIllustration'
 import { useUIStore } from '../stores/uiStore'
 
 export function ActiveWorkoutPage() {
@@ -274,7 +275,7 @@ export function ActiveWorkoutPage() {
           <nav className="exercise-thumb-nav" aria-label="Exercise navigation"><button disabled={exerciseIndex === 0} onClick={() => moveExerciseFocus(-1)}><ChevronLeft /> Previous</button><span><strong>{exerciseIndex + 1} / {active.exercises.length}</strong><small>Swipe to switch</small></span><button disabled={exerciseIndex === active.exercises.length - 1} onClick={() => moveExerciseFocus(1)}>Next <ChevronRight /></button></nav>
           <section className="active-guidance-quick" aria-label={`${exercise.name} form guide`}>
             <div className="guidance-motion has-illustration">
-              <img src={`/exercise-guides/library/${exercise.id}.webp`} alt={`${exercise.name} start and finish positions`} />
+              <img src={getExerciseIllustrationUrl(exercise.id)} alt={`${exercise.name} start and finish positions`} />
               <div className="guidance-frame-labels" aria-hidden="true"><span>Start</span><span>Finish</span></div>
             </div>
             <div className="guidance-quick-steps">

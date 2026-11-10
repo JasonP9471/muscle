@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import illustratedExerciseIds from '../../public/exercise-guides/library/index.json'
 import { EXERCISES } from './exercises'
+import { getExerciseIllustrationUrl } from '../utils/exerciseIllustration'
 
 describe('exercise illustrations', () => {
   it('provides a local start-and-finish visual for every exercise', () => {
@@ -9,5 +10,10 @@ describe('exercise illustrations', () => {
 
     expect(missing).toEqual([])
     expect(EXERCISES).toHaveLength(231)
+  })
+
+  it('resolves illustration URLs under the configured site base path', () => {
+    expect(getExerciseIllustrationUrl('dumbbell-front-squat', '/muscle/')).toBe('/muscle/exercise-guides/library/dumbbell-front-squat.webp')
+    expect(getExerciseIllustrationUrl('dumbbell-front-squat', '/')).toBe('/exercise-guides/library/dumbbell-front-squat.webp')
   })
 })
