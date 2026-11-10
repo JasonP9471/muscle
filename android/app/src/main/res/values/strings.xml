@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">TrainOS</string>
+    <string name="title_activity_main">TrainOS</string>
+    <string name="package_name">com.trainos.mobile</string>
+    <string name="custom_url_scheme">com.trainos.mobile</string>
+</resources>
