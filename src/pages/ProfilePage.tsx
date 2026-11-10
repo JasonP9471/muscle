@@ -92,7 +92,7 @@ export function ProfilePage() {
     await authProvider.signOut()
     setSession(null)
     addToast('You are logged out. Your local TrainOS data remains on this device.', 'success')
-    window.location.assign('/auth')
+    window.location.assign(`${import.meta.env.BASE_URL}auth`)
   }
   const syncState = getSyncState({ online, session, sessionChecked, syncing, syncError, lastSyncAt: settings.lastCloudSyncAt })
   const SyncIcon = syncState.icon

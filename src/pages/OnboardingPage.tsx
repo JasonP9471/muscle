@@ -182,7 +182,7 @@ export function OnboardingPage() {
   const skipOnboarding = () => savePlan({ ...INITIAL, name: 'Athlete', bodyWeight: 165 }, 'Starter plan created. Personalize it anytime from Profile.')
   const openAccountLogin = () => {
     disableLocalOnlyMode()
-    window.location.assign('/auth')
+    window.location.assign(`${import.meta.env.BASE_URL}auth`)
   }
 
   if (step === 0) return (

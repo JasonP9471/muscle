@@ -4,7 +4,10 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { sites } from '@openai/sites-vite-plugin'
 
+const base = process.env.GITHUB_PAGES === 'true' ? '/muscle/' : '/'
+
 export default defineConfig({
+  base,
   plugins: [
     sites(),
     react(),
@@ -19,19 +22,19 @@ export default defineConfig({
         theme_color: '#0b0d0f',
         background_color: '#080a0b',
         display: 'standalone',
-        start_url: '/',
-        scope: '/',
+        start_url: base,
+        scope: base,
         orientation: 'portrait-primary',
         icons: [
-          { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
-          { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: `${base}icon-192.png`, sizes: '192x192', type: 'image/png' },
+          { src: `${base}icon-512.png`, sizes: '512x512', type: 'image/png' },
+          { src: `${base}icon-512.png`, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,webp,json,woff2}'],
         cleanupOutdatedCaches: true,
-        navigateFallback: '/index.html',
+        navigateFallback: `${base}index.html`,
       },
     }),
   ],
