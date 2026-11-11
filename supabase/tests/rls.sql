@@ -49,8 +49,10 @@ select results_eq(
 
 set local role anon;
 set local "request.jwt.claim.sub" = '';
-select is_empty(
+select throws_ok(
   $$ select user_id from public.account_snapshots $$,
+  '42501',
+  'permission denied for table account_snapshots',
   'anonymous users cannot read account snapshots'
 );
 select * from finish();

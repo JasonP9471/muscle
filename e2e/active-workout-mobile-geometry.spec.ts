@@ -52,13 +52,23 @@ test('active-workout header and controls fit narrow mobile screens', async ({ pa
 
     const titleBox = await page.locator('.active-title > span').boundingBox()
     const elapsedBox = await page.locator('.elapsed').boundingBox()
+    const sessionButton = page.getByRole('button', { name: 'Open session menu' })
+    const sessionButtonBox = await sessionButton.boundingBox()
     const restTimer = page.locator('.rest-timer')
     const restTimerBox = await restTimer.boundingBox()
     const controlDockBox = await page.locator('.session-control-dock').boundingBox()
-    if (!titleBox || !elapsedBox || !restTimerBox || !controlDockBox) {
+    if (!titleBox || !elapsedBox || !sessionButtonBox || !restTimerBox || !controlDockBox) {
       throw new Error(`Expected workout controls to be laid out at ${width}px.`)
     }
     expect(titleBox.y + titleBox.height).toBeLessThanOrEqual(elapsedBox.y)
+    expect(sessionButtonBox.x).toBeGreaterThanOrEqual(0)
+    expect(sessionButtonBox.x + sessionButtonBox.width).toBeLessThanOrEqual(width)
+    expect(titleBox.x + titleBox.width).toBeLessThanOrEqual(sessionButtonBox.x)
+    expect(sessionButtonBox.width).toBeGreaterThanOrEqual(44)
+    expect(sessionButtonBox.height).toBeGreaterThanOrEqual(44)
+    const sessionLabel = page.locator('.active-header .button.finish > span')
+    if (width <= 360) await expect(sessionLabel).toBeHidden()
+    else await expect(sessionLabel).toBeVisible()
     expect(restTimerBox.y + restTimerBox.height).toBeLessThanOrEqual(controlDockBox.y)
     const horizontalOverflow = await page.evaluate(() => ({
       scrollWidth: document.documentElement.scrollWidth,

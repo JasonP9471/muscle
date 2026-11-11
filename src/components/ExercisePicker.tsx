@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Check, Filter, Replace, Search, ShieldCheck, Star, X } from 'lucide-react'
 import type { ExerciseSubstitutionSet } from '../algorithms/exerciseSubstitutions'
@@ -8,6 +8,7 @@ import type { Exercise } from '../types'
 import { MUSCLES } from '../types'
 import { ExerciseGlyph } from './ExerciseGlyph'
 import { formatMuscle } from '../utils/format'
+import { useModalDialog } from '../hooks/useModalDialog'
 
 export function ExercisePicker({
   open, title = 'Add exercise', excludeIds = [], substitutions, onSelect, onClose,
@@ -27,6 +28,9 @@ export function ExercisePicker({
   const [equipment, setEquipment] = useState('all')
   const [pattern, setPattern] = useState('all')
   const [favoritesOnly, setFavoritesOnly] = useState(false)
+  const searchRef = useRef<HTMLInputElement>(null)
+  const titleId = useId()
+  const dialogRef = useModalDialog<HTMLElement>({ open, onClose, initialFocusRef: searchRef })
   const favoriteIds = useMemo(() => new Set((preferenceRows ?? []).filter((preference) => preference.level === 'favorite').map((preference) => preference.exerciseId)), [preferenceRows])
   const excluded = useMemo(() => new Set((preferenceRows ?? []).filter((preference) => preference.level === 'exclude').map((preference) => preference.exerciseId)), [preferenceRows])
   const recentIds = useMemo(() => [...new Set((recentLogs ?? []).map((log) => log.exerciseId))], [recentLogs])
@@ -53,14 +57,14 @@ export function ExercisePicker({
   if (!open) return null
   return (
     <div className="sheet-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="picker-sheet" role="dialog" aria-modal="true" aria-labelledby="picker-title">
-        <header><div><p className="eyebrow">Exercise library</p><h2 id="picker-title">{title}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close exercise picker"><X /></button></header>
+      <section className="picker-sheet" ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+        <header><div><p className="eyebrow">Exercise library</p><h2 id={titleId}>{title}</h2></div><button className="icon-button" onClick={onClose} aria-label="Close exercise picker"><X /></button></header>
         {substitutions && <div className="substitution-summary">
           <Replace aria-hidden="true" />
           <div><strong>Replacing {substitutions.source.name}</strong><p>Ranked by movement pattern, target muscles, your equipment, and difficulty.</p></div>
           {substitutions.limitationLabels.length > 0 && <span><ShieldCheck /> {substitutions.limitationLabels.join(' · ')} filter active</span>}
         </div>}
-        <label className="search-field"><Search /><input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder={substitutions ? 'Search recommended substitutes' : 'Search 231 exercises'} aria-label="Search exercises" /></label>
+        <label className="search-field"><Search /><input ref={searchRef} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={substitutions ? 'Search recommended substitutes' : 'Search 231 exercises'} aria-label="Search exercises" /></label>
         <div className="picker-filters">
           <Filter size={18} aria-hidden="true" />
           <select aria-label="Filter by muscle" value={muscle} onChange={(event) => setMuscle(event.target.value)}><option value="all">All muscles</option>{MUSCLES.map((item) => <option key={item} value={item}>{formatMuscle(item)}</option>)}</select>
