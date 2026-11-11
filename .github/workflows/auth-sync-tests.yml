@@ -28,7 +28,7 @@ jobs:
       - uses: supabase/setup-cli@v1
         with:
           version: latest
-      - run: supabase start
+      - run: supabase start --exclude mailpit
       - name: Verify cross-user isolation against local Supabase only
         env:
           TRAINOS_TEST_SUPABASE_URL: http://127.0.0.1:54321
