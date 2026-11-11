@@ -69,4 +69,4 @@ The package-script RLS invocation could not find a globally installed `supabase`
 
 ## Recommended next sprint
 
-Stabilize and investigate the Nutrition logger end-to-end flow, then address bundle/precache size and perform a device-level keyboard/viewport check on the active workout. Keep these separate from the verified modal and RLS fixes.
+Address JavaScript bundle and PWA precache size, then perform a device-level keyboard/viewport check on the active workout. Keep these separate from the verified modal, mobile geometry, and RLS fixes.
