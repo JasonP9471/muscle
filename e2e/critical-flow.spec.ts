@@ -157,7 +157,9 @@ test('onboarding through completed workout, recovery, history, progress, persist
 
   await page.getByRole('link', { name: 'Nutrition' }).click()
   await expect(page).toHaveURL(/\/nutrition$/)
+  await expect(page.getByRole('heading', { name: 'Nutrition', exact: true })).toBeVisible()
   await page.getByRole('button', { name: /Log food/ }).first().click()
+  await expect(page.locator('.logger-sheet')).toBeVisible()
   await page.getByLabel('Search food database').fill('chicken')
   await page.locator('.food-result').filter({ hasText: 'Grilled chicken breast' }).click()
   await page.getByRole('button', { name: /^Add food/ }).click()

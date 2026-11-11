@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { ArrowLeft, ArrowRight, BarChart3, BookOpen, Copy, Dumbbell, History, Menu, Pencil, Play, Plus, RefreshCw, Save, Sparkles, Trash2, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -12,6 +12,7 @@ import { cancelRestNotification } from '../services/mobile'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { useUIStore } from '../stores/uiStore'
 import type { WorkoutPlan, WorkoutTemplate } from '../types'
+import { useModalDialog } from '../hooks/useModalDialog'
 
 export function TrainPage() {
   usePageTitle('Train')
@@ -28,19 +29,12 @@ export function TrainPage() {
   const [endingActive, setEndingActive] = useState(false)
   const [optionsOpen, setOptionsOpen] = useState(false)
   const [templatesOpen, setTemplatesOpen] = useState(false)
+  const optionsTriggerRef = useRef<HTMLButtonElement>(null)
+  const optionsCloseRef = useRef<HTMLButtonElement>(null)
+  const optionsTitleId = useId()
+  const optionsDialogRef = useModalDialog<HTMLElement>({ open: optionsOpen, onClose: () => { setOptionsOpen(false); setTemplatesOpen(false) }, initialFocusRef: optionsCloseRef })
   const navigate = useNavigate()
   const addToast = useUIStore((state) => state.addToast)
-  useEffect(() => {
-    if (!optionsOpen) return
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setOptionsOpen(false)
-        setTemplatesOpen(false)
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [optionsOpen])
   if (!profile || templates === undefined) return <LoadingState />
   const regenerate = async () => {
     setGenerating(true)
@@ -120,14 +114,14 @@ export function TrainPage() {
   }
   if (active) return <main className="page train-page"><EmptyState icon={Play} title="Workout in progress" message={`${active.title} is safely autosaved. Resume it, or end it to choose another plan.`} action={<div className="state-actions"><button className="button primary" onClick={() => navigate('/workout/active')}>Resume workout <ArrowRight /></button><button className="button danger" onClick={() => setConfirmDiscardActive(true)}><X /> End & choose another</button></div>} /><ConfirmationDialog open={confirmDiscardActive} title="End this workout?" message="This active session and any completed sets in it will not be saved. Your planned workout will remain available to edit or replace." confirmLabel={endingActive ? 'Ending…' : 'End workout'} danger onCancel={() => setConfirmDiscardActive(false)} onConfirm={() => void discardAndChooseAnother()} /></main>
   return <main className="page train-page">
-    <div className="train-page-actions"><button className="button secondary" aria-haspopup="dialog" onClick={() => setOptionsOpen(true)}><Menu /> Workout options</button></div>
+    <div className="train-page-actions"><button className="button secondary" aria-haspopup="dialog" ref={optionsTriggerRef} onClick={() => setOptionsOpen(true)}><Menu /> Workout options</button></div>
     {draft ? <WorkoutEditor key={draft.id} initialPlan={draft} profile={profile} onPlanChange={savePlan} onChangeFocus={changeFocus} onStart={begin} starting={starting} /> :
       <section className="generate-hero"><span className="generate-icon"><Sparkles /></span><p className="eyebrow">Today’s scheduled workout</p><h1>Build today’s session.</h1><p>TrainOS will use your split sequence, recovery, equipment, exercise history, and session target to build the plan that fits today.</p><button className="button primary large" disabled={generating} onClick={regenerate}>{generating ? 'Building your workout…' : 'Generate today’s workout'} <ArrowRight /></button></section>}
     {optionsOpen && <div className="sheet-backdrop train-options-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) { setOptionsOpen(false); setTemplatesOpen(false) } }}>
-      <section className="train-options-sheet" role="dialog" aria-modal="true" aria-labelledby="train-options-title">
+      <section className="train-options-sheet" ref={optionsDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={optionsTitleId}>
         <header>
-          <div>{templatesOpen && <button className="icon-button" aria-label="Back to workout options" onClick={() => setTemplatesOpen(false)}><ArrowLeft /></button>}<div><p className="eyebrow">Secondary actions</p><h2 id="train-options-title">{templatesOpen ? 'Saved templates' : 'Workout options'}</h2></div></div>
-          <button className="icon-button" aria-label="Close workout options" onClick={() => { setOptionsOpen(false); setTemplatesOpen(false) }}><X /></button>
+          <div>{templatesOpen && <button className="icon-button" aria-label="Back to workout options" onClick={() => setTemplatesOpen(false)}><ArrowLeft /></button>}<div><p className="eyebrow">Secondary actions</p><h2 id={optionsTitleId}>{templatesOpen ? 'Saved templates' : 'Workout options'}</h2></div></div>
+          <button className="icon-button" ref={optionsCloseRef} aria-label="Close workout options" onClick={() => { setOptionsOpen(false); setTemplatesOpen(false) }}><X /></button>
         </header>
         {templatesOpen ? (templates.length > 0 ? <TemplateList templates={templates} onUse={useTemplate} onDelete={setDeleteTemplate} compact /> : <div className="train-options-empty"><Dumbbell /><h3>No saved templates yet</h3><p>Save today’s workout and it will appear here for quick reuse.</p></div>) : <div className="train-option-list">
           <button disabled={!draft || generating} onClick={requestVariation}><RefreshCw /><span><strong>{generating ? 'Creating variation…' : 'Regenerate workout'}</strong><small>Keep today’s focus and refresh the exercise mix</small></span><ArrowRight /></button>
@@ -140,8 +134,8 @@ export function TrainPage() {
         </div>}
       </section>
     </div>}
-    <ConfirmationDialog open={!!deleteTemplate} title="Delete this template?" message="The saved template will be removed. Completed workouts are not affected." confirmLabel="Delete template" danger onCancel={() => setDeleteTemplate(null)} onConfirm={async () => { if (deleteTemplate) await db.workoutTemplates.delete(deleteTemplate.id); setDeleteTemplate(null); addToast('Template deleted.', 'success') }} />
-    <ConfirmationDialog open={confirmRegenerate} title="Create a new variation?" message="We’ll keep today’s focus and movement structure, replace up to two exercises, and reset your manual set and load changes." confirmLabel="Create variation" onCancel={() => setConfirmRegenerate(false)} onConfirm={() => { setConfirmRegenerate(false); void regenerate() }} />
+    <ConfirmationDialog open={!!deleteTemplate} title="Delete this template?" message="The saved template will be removed. Completed workouts are not affected." confirmLabel="Delete template" danger returnFocusRef={optionsTriggerRef} onCancel={() => setDeleteTemplate(null)} onConfirm={async () => { if (deleteTemplate) await db.workoutTemplates.delete(deleteTemplate.id); setDeleteTemplate(null); addToast('Template deleted.', 'success') }} />
+    <ConfirmationDialog open={confirmRegenerate} title="Create a new variation?" message="We’ll keep today’s focus and movement structure, replace up to two exercises, and reset your manual set and load changes." confirmLabel="Create variation" returnFocusRef={optionsTriggerRef} onCancel={() => setConfirmRegenerate(false)} onConfirm={() => { setConfirmRegenerate(false); void regenerate() }} />
   </main>
 }
 

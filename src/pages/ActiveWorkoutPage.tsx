@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type TouchEvent } from 'react'
+import { useEffect, useId, useRef, useState, type TouchEvent } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { AlertTriangle, ArrowLeft, Calculator, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Flame, Home, Menu, Minus, MoveRight, Pause, Play, Plus, Replace, Save, Shuffle, Timer, Trash2, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -21,6 +21,7 @@ import type { ActiveWorkout, Exercise } from '../types'
 import { formatDuration, formatMuscle } from '../utils/format'
 import { getExerciseIllustrationUrl } from '../utils/exerciseIllustration'
 import { useUIStore } from '../stores/uiStore'
+import { useModalDialog } from '../hooks/useModalDialog'
 
 export function ActiveWorkoutPage() {
   const activeRows = useLiveQuery(() => db.activeWorkout.toArray(), [])
@@ -43,6 +44,12 @@ export function ActiveWorkoutPage() {
   const timerAlerted = useRef(false)
   const initializedPlanRef = useRef<string | null>(null)
   const sessionMenuCloseRef = useRef<HTMLButtonElement>(null)
+  const sessionTriggerRef = useRef<HTMLButtonElement>(null)
+  const plateCloseRef = useRef<HTMLButtonElement>(null)
+  const sessionMenuTitleId = useId()
+  const plateCalculatorTitleId = useId()
+  const sessionMenuDialogRef = useModalDialog<HTMLElement>({ open: sessionMenuOpen, onClose: () => setSessionMenuOpen(false), initialFocusRef: sessionMenuCloseRef })
+  const plateDialogRef = useModalDialog<HTMLElement>({ open: plateTarget !== null, onClose: () => setPlateTarget(null), initialFocusRef: plateCloseRef })
   const navigate = useNavigate()
   const addToast = useUIStore((state) => state.addToast)
   useEffect(() => {
@@ -53,13 +60,6 @@ export function ActiveWorkoutPage() {
     if (!active?.pausedAt) return
     void saveActiveWorkout({ ...active, startedAt: new Date().toISOString(), pausedAt: undefined })
   }, [active])
-  useEffect(() => {
-    if (!sessionMenuOpen) return
-    sessionMenuCloseRef.current?.focus()
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setSessionMenuOpen(false) }
-    window.addEventListener('keydown', closeOnEscape)
-    return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [sessionMenuOpen])
   useEffect(() => {
     if (!active || initializedPlanRef.current === active.planId) return
     initializedPlanRef.current = active.planId
@@ -253,7 +253,7 @@ export function ActiveWorkoutPage() {
     }
   }
   return <main className="active-workout-page">
-    <header className="active-header"><button className="icon-button" aria-label="Back to Train" onClick={() => navigate('/train')}><ArrowLeft /></button><Brand /><div className="active-title"><span>{active.title}</span><small><Save /> Autosaved {new Date(active.autosavedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</small></div><div className="elapsed"><Clock3 /><strong>{formatDuration(elapsed)}</strong></div><button className="button finish" disabled={finishing} onClick={() => setSessionMenuOpen(true)}><Menu /> Session</button></header>
+    <header className="active-header"><button className="icon-button" aria-label="Back to Train" onClick={() => navigate('/train')}><ArrowLeft /></button><Brand /><div className="active-title"><span>{active.title}</span><small><Save /> Autosaved {new Date(active.autosavedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</small></div><div className="elapsed"><Clock3 /><strong>{formatDuration(elapsed)}</strong></div><button className="button finish" ref={sessionTriggerRef} disabled={finishing} onClick={() => setSessionMenuOpen(true)}><Menu /> Session</button></header>
     <div className="active-progress"><span style={{ width: `${totalSets ? (completedSets / totalSets) * 100 : 0}%` }} /><small>{completedSets} of {totalSets} sets</small></div>
     <section className="active-exercises">
       {active.exercises.map((planned, exerciseIndex) => {
@@ -315,8 +315,8 @@ export function ActiveWorkoutPage() {
       <button className="button secondary" disabled={finishing} onClick={() => setSessionMenuOpen(true)}><Menu /> Options</button>
     </div>
     {sessionMenuOpen && <div className="sheet-backdrop session-menu-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setSessionMenuOpen(false)}>
-      <section className="session-menu" role="dialog" aria-modal="true" aria-labelledby="session-menu-title">
-        <header><div><p className="eyebrow">Workout controls</p><h2 id="session-menu-title">What would you like to do?</h2></div><button className="icon-button" ref={sessionMenuCloseRef} aria-label="Close workout controls" onClick={() => setSessionMenuOpen(false)}><X /></button></header>
+      <section className="session-menu" ref={sessionMenuDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={sessionMenuTitleId}>
+        <header><div><p className="eyebrow">Workout controls</p><h2 id={sessionMenuTitleId}>What would you like to do?</h2></div><button className="icon-button" ref={sessionMenuCloseRef} aria-label="Close workout controls" onClick={() => setSessionMenuOpen(false)}><X /></button></header>
         <button disabled={completedWorkingSets === 0} onClick={() => { setSessionMenuOpen(false); setConfirmFinish(true) }}><CheckCircle2 /><span><strong>Finish and save</strong><small>{completedWorkingSets > 0 ? `Save ${completedWorkingSets} of ${totalWorkingSets} working sets and update your progress.` : 'Complete at least one working set before saving.'}</small></span></button>
         <button onClick={() => void saveForLater()}><Save /><span><strong>Save and continue later</strong><small>Pause this session and return to Today. Your entries stay saved.</small></span></button>
         <button className="danger-option" onClick={() => { setSessionMenuOpen(false); setDiscardAction('end') }}><X /><span><strong>End without saving</strong><small>Discard this session and return to Today.</small></span></button>
@@ -324,9 +324,9 @@ export function ActiveWorkoutPage() {
         <button className="menu-cancel" onClick={() => setSessionMenuOpen(false)}><Home /> Keep working out</button>
       </section>
     </div>}
-    {plateTarget && (() => { const targetSet = active.exercises[plateTarget.exerciseIndex]?.sets[plateTarget.setIndex]; if (!targetSet) return null; const load = calculatePlateLoad(targetSet.weight ?? 0, profile.units, barWeight); return <div className="sheet-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setPlateTarget(null)}><section className="plate-calculator" role="dialog" aria-modal="true" aria-labelledby="plate-calculator-title"><header><div><p className="eyebrow">Load the bar</p><h2 id="plate-calculator-title">Plate calculator</h2></div><button className="icon-button" aria-label="Close plate calculator" onClick={() => setPlateTarget(null)}><X /></button></header><div className="plate-total"><span>Target</span><strong>{targetSet.weight ?? 0} {profile.units}</strong></div><label className="field"><span>Bar weight ({profile.units})</span><input type="number" inputMode="decimal" min="0" step={profile.units === 'kg' ? 2.5 : 5} value={barWeight} onChange={(event) => setBarWeight(Math.max(0, Number(event.target.value)))} /></label><div className="plate-result"><span>Put on each side</span>{load.perSide.length > 0 ? <div>{load.perSide.map((item) => <strong key={item.plate}>{item.count} × {item.plate}</strong>)}</div> : <p>The bar is already at or above this target.</p>}<small>Loaded total: {load.loadedWeight} {profile.units}{load.remainder > 0 ? ` · ${load.remainder} ${profile.units} under target` : ' · exact'}</small></div>{load.remainder > 0 && load.loadedWeight > 0 && <button className="button primary" onClick={() => { updateSet(plateTarget.exerciseIndex, plateTarget.setIndex, 'weight', load.loadedWeight); setPlateTarget(null) }}>Use {load.loadedWeight} {profile.units}</button>}</section></div> })()}
-    <ConfirmationDialog open={confirmFinish} title="Finish and save this workout?" message={`${completedWorkingSets} completed working sets will be saved. Warm-ups stay out of volume, records, and fatigue.`} confirmLabel={finishing ? 'Saving…' : 'Finish & save'} onCancel={() => setConfirmFinish(false)} onConfirm={() => void completeWorkout()} />
-    <ConfirmationDialog open={discardAction !== null} title={discardAction === 'switch' ? 'Switch workouts?' : 'End without saving?'} message={discardAction === 'switch' ? `${completedSets > 0 ? `${completedSets} completed sets and ` : ''}changes from this session will be discarded. Your planned workout remains available to replace or edit.` : `${completedSets > 0 ? `${completedSets} completed sets and ` : ''}changes from this session will be discarded. You’ll return to Today.`} confirmLabel={finishing ? 'Ending…' : discardAction === 'switch' ? 'End & switch' : 'End without saving'} danger onCancel={() => setDiscardAction(null)} onConfirm={() => discardAction && void discardWorkout(discardAction)} />
+    {plateTarget && (() => { const targetSet = active.exercises[plateTarget.exerciseIndex]?.sets[plateTarget.setIndex]; if (!targetSet) return null; const load = calculatePlateLoad(targetSet.weight ?? 0, profile.units, barWeight); return <div className="sheet-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setPlateTarget(null)}><section className="plate-calculator" ref={plateDialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={plateCalculatorTitleId}><header><div><p className="eyebrow">Load the bar</p><h2 id={plateCalculatorTitleId}>Plate calculator</h2></div><button className="icon-button" ref={plateCloseRef} aria-label="Close plate calculator" onClick={() => setPlateTarget(null)}><X /></button></header><div className="plate-total"><span>Target</span><strong>{targetSet.weight ?? 0} {profile.units}</strong></div><label className="field"><span>Bar weight ({profile.units})</span><input type="number" inputMode="decimal" min="0" step={profile.units === 'kg' ? 2.5 : 5} value={barWeight} onChange={(event) => setBarWeight(Math.max(0, Number(event.target.value)))} /></label><div className="plate-result"><span>Put on each side</span>{load.perSide.length > 0 ? <div>{load.perSide.map((item) => <strong key={item.plate}>{item.count} × {item.plate}</strong>)}</div> : <p>The bar is already at or above this target.</p>}<small>Loaded total: {load.loadedWeight} {profile.units}{load.remainder > 0 ? ` · ${load.remainder} ${profile.units} under target` : ' · exact'}</small></div>{load.remainder > 0 && load.loadedWeight > 0 && <button className="button primary" onClick={() => { updateSet(plateTarget.exerciseIndex, plateTarget.setIndex, 'weight', load.loadedWeight); setPlateTarget(null) }}>Use {load.loadedWeight} {profile.units}</button>}</section></div> })()}
+    <ConfirmationDialog open={confirmFinish} title="Finish and save this workout?" message={`${completedWorkingSets} completed working sets will be saved. Warm-ups stay out of volume, records, and fatigue.`} confirmLabel={finishing ? 'Saving…' : 'Finish & save'} returnFocusRef={sessionTriggerRef} onCancel={() => setConfirmFinish(false)} onConfirm={() => void completeWorkout()} />
+    <ConfirmationDialog open={discardAction !== null} title={discardAction === 'switch' ? 'Switch workouts?' : 'End without saving?'} message={discardAction === 'switch' ? `${completedSets > 0 ? `${completedSets} completed sets and ` : ''}changes from this session will be discarded. Your planned workout remains available to replace or edit.` : `${completedSets > 0 ? `${completedSets} completed sets and ` : ''}changes from this session will be discarded. You’ll return to Today.`} confirmLabel={finishing ? 'Ending…' : discardAction === 'switch' ? 'End & switch' : 'End without saving'} danger returnFocusRef={sessionTriggerRef} onCancel={() => setDiscardAction(null)} onConfirm={() => discardAction && void discardWorkout(discardAction)} />
     <ExercisePicker open={pickerOpen} title={replaceIndex === null ? 'Add an exercise' : 'Choose the best substitute'} excludeIds={active.exercises.map((exercise) => exercise.exerciseId)} substitutions={substitutions} onSelect={selectExercise} onClose={() => setPickerOpen(false)} />
   </main>
 }
