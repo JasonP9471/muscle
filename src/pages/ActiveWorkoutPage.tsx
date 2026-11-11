@@ -253,7 +253,7 @@ export function ActiveWorkoutPage() {
     }
   }
   return <main className="active-workout-page">
-    <header className="active-header"><button className="icon-button" aria-label="Back to Train" onClick={() => navigate('/train')}><ArrowLeft /></button><Brand /><div className="active-title"><span>{active.title}</span><small><Save /> Autosaved {new Date(active.autosavedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</small></div><div className="elapsed"><Clock3 /><strong>{formatDuration(elapsed)}</strong></div><button className="button finish" ref={sessionTriggerRef} disabled={finishing} onClick={() => setSessionMenuOpen(true)}><Menu /> Session</button></header>
+    <header className="active-header"><button className="icon-button" aria-label="Back to Train" onClick={() => navigate('/train')}><ArrowLeft /></button><Brand /><div className="active-title"><span>{active.title}</span><small><Save /> Autosaved {new Date(active.autosavedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</small></div><div className="elapsed"><Clock3 /><strong>{formatDuration(elapsed)}</strong></div><button className="button finish" ref={sessionTriggerRef} aria-label="Open session menu" disabled={finishing} onClick={() => setSessionMenuOpen(true)}><Menu /><span>Session</span></button></header>
     <div className="active-progress"><span style={{ width: `${totalSets ? (completedSets / totalSets) * 100 : 0}%` }} /><small>{completedSets} of {totalSets} sets</small></div>
     <section className="active-exercises">
       {active.exercises.map((planned, exerciseIndex) => {

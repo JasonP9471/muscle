@@ -41,7 +41,7 @@ test('an empty active workout exposes clear session controls and can switch plan
 
   await expect(page).toHaveURL(/\/workout\/active$/)
   await expect(page.getByText(/0 of \d+ sets/).first()).toBeVisible()
-  await page.getByRole('button', { name: 'Session' }).click()
+  await page.getByRole('button', { name: 'Open session menu' }).click()
   await expect(page.getByRole('dialog', { name: 'What would you like to do?' })).toBeVisible()
   await expect(page.getByRole('button', { name: /Finish and save/ })).toBeDisabled()
   await expect(page.getByRole('button', { name: /Save and continue later/ })).toBeVisible()
@@ -64,7 +64,7 @@ test('an active workout can be paused and resumed from Today', async ({ page }) 
   await page.locator('.sticky-start').getByRole('button', { name: 'Start workout', exact: true }).click()
 
   await expect(page).toHaveURL(/\/workout\/active$/)
-  await page.getByRole('button', { name: 'Session' }).click()
+  await page.getByRole('button', { name: 'Open session menu' }).click()
   await page.getByRole('button', { name: /Save and continue later/ }).click()
   await expect(page).toHaveURL(/\/today$/)
   await expect(page.getByRole('button', { name: /Resume workout/ }).first()).toBeVisible()

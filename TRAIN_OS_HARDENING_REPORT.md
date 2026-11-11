@@ -24,7 +24,9 @@ Implemented focused dialog accessibility and active-workout mobile geometry impr
 ### Mobile workout
 
 - Updated `src/styles.css` to fit set-entry fields at narrow widths, preserve readable 16px form text, increase practical touch targets, and account for the fixed dock/timer and safe areas.
+- Made the header Session control icon-only at 320px with the accessible name “Open session menu”; responsive tests verify its bounds and separation from the workout title at 320, 375, and 430px.
 - Added `e2e/hardening-mobile-workout.spec.ts` to check set-entry overflow, control visibility/tap dimensions, fixed-control overlap, and bottom-navigation targets at 320, 375, 390, 430, and 768 CSS pixels.
+- Extended `e2e/active-workout-mobile-geometry.spec.ts` to verify the Session control's accessible name, label visibility, viewport bounds, touch target, and title spacing at 320, 375, and 430px.
 - Captured before-and-after screenshots under `outputs/hardening-sprint-2/{before,after}/active-workout-{320,375,390,430,768}.png`.
 
 ### Supabase RLS test
@@ -43,6 +45,7 @@ Implemented focused dialog accessibility and active-workout mobile geometry impr
 - Added: `src/components/ConfirmationDialog.test.tsx`
 - Added: `e2e/hardening-mobile-workout.spec.ts`
 - Modified: `e2e/critical-flow.spec.ts` to remove the route-transition timing race
+- Modified: `e2e/active-workout-mobile-geometry.spec.ts` for Session control geometry and accessible naming
 - Added: `outputs/hardening-sprint-2/` before-and-after screenshots
 - Added: `TRAIN_OS_HARDENING_REPORT.md`
 
@@ -55,7 +58,7 @@ Implemented focused dialog accessibility and active-workout mobile geometry impr
 | `npm test -- --run` | Passed: 24 files, 109 tests |
 | `npm run test:auth-sync` | Passed: 4 files, 26 tests |
 | `npm run build` | Passed; emitted existing bundle-size warnings (515.8 KB main JS chunk, 354.4 KB chart chunk) and a 4.56 MiB PWA precache |
-| Focused responsive Playwright test | Passed across 320, 375, 390, 430, and 768 px |
+| Focused responsive Playwright tests | Passed: set entry at 320, 375, 390, 430, and 768 px; Session button visibility, bounds, and title spacing at 320, 375, and 430 px |
 | Full `npm run test:e2e` | Passed: 8/8 tests, including the responsive workout checks at 320, 375, 390, 430, and 768 px. |
 | Formerly timing-out critical-flow E2E | Passed 3/3 consecutive isolated reruns after adding route-render synchronization; full suite then passed. |
 | Local Supabase RLS test | Passed: 15 assertions. Ran through Supabase CLI 3.1.0 against the isolated local stack after the repository's safety guard verified `127.0.0.1`. |
