@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { db } from '../../db/database'
+import { importBackup, exportAllData } from '../../db/backup'
 import type { TrainOSBackup } from '../../db/backup'
-import { decideSyncAction, fingerprintBackup } from './provider'
+import { acknowledgeSnapshot, decideSyncAction, fingerprintBackup } from './provider'
 
 function createBackup(): TrainOSBackup {
   return {
@@ -156,5 +158,55 @@ describe('account sync decisions', () => {
       lastSyncedFingerprint: 'device-a-workout',
     })
     expect(deviceADownload).toBe('download')
+  })
+})
+
+
+describe('transactional sync acknowledgement', () => {
+  beforeEach(async () => { await db.delete(); await db.open() })
+  afterEach(() => { vi.restoreAllMocks(); db.close() })
+
+  it('preserves a late meal and remote workout while baselining only the server payload', async () => {
+    const expectedLocal = createBackup()
+    await importBackup(expectedLocal)
+    await db.meals.put({ id: 'late-meal', name: 'Lunch', type: 'lunch', method: 'manual', loggedAt: '2026-11-13T12:00:00Z', createdAt: '2026-11-13T12:00:00Z', estimated: false })
+    const acknowledged = structuredClone(expectedLocal)
+    acknowledged.tables.workouts.push({ id: 'remote-workout' })
+    const result = await acknowledgeSnapshot({ userId: 'user-a', expectedLocal, acknowledged, completedAt: '2026-11-13T13:00:00Z', conflicts: [] })
+    expect(result.pending).toBe(true)
+    expect(await db.meals.get('late-meal')).toBeDefined()
+    expect(await db.workouts.get('remote-workout')).toBeDefined()
+    expect((await db.syncMetadata.get('user-a'))?.baseline).toEqual(acknowledged)
+    expect((await db.syncQueue.get('account-snapshot'))?.payload).toEqual(result.backup)
+    expect((await db.appSettings.get('primary'))?.lastCloudSyncAt).toBe('2026-09-29T00:00:00.000Z')
+
+    await acknowledgeSnapshot({ userId: 'user-a', expectedLocal: result.backup, acknowledged: result.backup, completedAt: '2026-11-13T13:01:00Z', conflicts: [] })
+    expect(await db.syncQueue.count()).toBe(0)
+    expect((await db.appSettings.get('primary'))?.lastCloudSyncAt).toBe('2026-11-13T13:01:00Z')
+  })
+
+  it('serializes a competing IndexedDB write after acknowledgement without losing it on the next pass', async () => {
+    const expectedLocal = createBackup()
+    await importBackup(expectedLocal)
+    const acknowledged = structuredClone(expectedLocal)
+    acknowledged.tables.workouts.push({ id: 'remote-workout' })
+    const commit = acknowledgeSnapshot({ userId: 'user-a', expectedLocal, acknowledged, completedAt: '2026-11-13T13:00:00Z', conflicts: [] })
+    const edit = db.profiles.update('primary', { name: 'Edited during sync' })
+    await Promise.all([commit, edit])
+    expect((await db.profiles.get('primary'))?.name).toBe('Edited during sync')
+    const latest = await exportAllData()
+    expect(fingerprintBackup(latest)).not.toBe(fingerprintBackup(acknowledged))
+    expect((await db.syncMetadata.get('user-a'))?.baseline).toEqual(acknowledged)
+  })
+
+  it('rolls back local replacement and queue changes when acknowledgement fails', async () => {
+    const expectedLocal = createBackup()
+    await importBackup(expectedLocal)
+    const acknowledged = structuredClone(expectedLocal)
+    acknowledged.tables.profiles = [{ id: 'primary', name: 'Remote profile' }]
+    vi.spyOn(db.syncMetadata, 'put').mockRejectedValueOnce(new Error('Storage unavailable'))
+    await expect(acknowledgeSnapshot({ userId: 'user-a', expectedLocal, acknowledged, completedAt: '2026-11-13T13:00:00Z', conflicts: [] })).rejects.toThrow('Storage unavailable')
+    expect((await db.profiles.get('primary'))?.name).toBe('Athlete')
+    expect(await db.syncMetadata.count()).toBe(0)
   })
 })

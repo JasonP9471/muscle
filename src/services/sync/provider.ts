@@ -1,11 +1,12 @@
 import { cloudConfig } from '../../config/cloud'
-import { exportAllData, importBackup, type TrainOSBackup } from '../../db/backup'
+import { BACKUP_TABLE_NAMES, exportAllData, type TrainOSBackup } from '../../db/backup'
 import { db, type SyncConflictRecord, type SyncMetadata, type SyncQueueEntry } from '../../db/database'
 import { resetDatabase } from '../../db/initialize'
 import { authProvider } from '../auth/provider'
 import { supabaseClient } from '../supabase/client'
 import {
-  ensureDeviceOwner, fingerprintBackup, runAccountSync, type AccountSnapshotRow,
+  ensureDeviceOwner, fingerprintBackup, reconcileAcknowledgement, runAccountSync, type AccountSnapshotRow,
+  type SyncAcknowledgement, type SyncAcknowledgementResult,
   type DeviceSyncStore, type RemoteSnapshotStore, type SyncDirection,
 } from './engine'
 import type { SnapshotConflict } from './merge'
@@ -52,21 +53,10 @@ export function decideSyncAction(input: {
 
 export async function queueLocalSnapshot(reason = 'local-change'): Promise<void> {
   if (!cloudSyncAvailable) return
-  const snapshot = await exportAllData()
-  const fingerprint = fingerprintBackup(snapshot)
-  const existing = await db.syncQueue.get(OUTBOX_ID)
-  if (existing?.fingerprint === fingerprint) return
-  const now = new Date().toISOString()
-  const entry: SyncQueueEntry = {
-    id: OUTBOX_ID,
-    payload: snapshot,
-    fingerprint,
-    reason,
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-    attemptCount: 0,
-  }
-  await db.syncQueue.put(entry)
+  await db.transaction('rw', [...BACKUP_TABLE_NAMES.map((name) => db.table(name)), db.syncQueue], async () => {
+    const snapshot = await exportAllData()
+    await putQueuedSnapshot(snapshot, reason)
+  })
 }
 
 export async function syncLocalSnapshot(): Promise<SyncSummary> {
@@ -146,14 +136,8 @@ async function saveRemoteSnapshot(
 const deviceStore: DeviceSyncStore = {
   queueSnapshot: queueLocalSnapshot,
   readLocal: exportAllData,
-  replaceLocal: async (backup) => { await importBackup(backup) },
   readBaseline: async (userId) => (await readMetadata(userId))?.baseline,
-  writeBaseline: writeMetadata,
-  recordConflicts,
-  markSynced: async (completedAt) => {
-    await db.appSettings.update('primary', { cloudSyncEnabled: true, lastCloudSyncAt: completedAt })
-  },
-  clearQueue: async () => { await db.syncQueue.delete(OUTBOX_ID) },
+  acknowledge: acknowledgeSnapshot,
   markQueueFailed,
 }
 
@@ -171,8 +155,43 @@ async function readMetadata(userId: string): Promise<(SyncMetadata & { baseline:
   return { ...metadata, baseline: metadata.baseline }
 }
 
-async function writeMetadata(userId: string, baseline: TrainOSBackup, remoteUpdatedAt: string): Promise<void> {
-  await db.syncMetadata.put({ id: userId, userId, baseline, remoteUpdatedAt, updatedAt: new Date().toISOString() })
+export async function acknowledgeSnapshot(input: SyncAcknowledgement): Promise<SyncAcknowledgementResult> {
+  const tables = BACKUP_TABLE_NAMES.map((name) => db.table(name))
+  return db.transaction('rw', [...tables, db.syncQueue, db.syncMetadata, db.syncConflicts], async () => {
+    const current = await exportAllData()
+    const result = reconcileAcknowledgement(current, input)
+    if (fingerprintBackup(current) !== fingerprintBackup(result.backup)) {
+      for (const name of BACKUP_TABLE_NAMES) {
+        await db.table(name).clear()
+        await db.table(name).bulkAdd(result.backup.tables[name])
+      }
+    }
+    // A baseline is evidence of what the server accepted, never a later local read.
+    await db.syncMetadata.put({
+      id: input.userId, userId: input.userId, baseline: input.acknowledged,
+      remoteUpdatedAt: input.completedAt, updatedAt: input.completedAt,
+    })
+    await recordConflicts(input.userId, result.conflicts, input.completedAt)
+    if (result.pending) {
+      await putQueuedSnapshot(result.backup, 'changed-during-sync')
+    } else {
+      await db.appSettings.update('primary', { cloudSyncEnabled: true, lastCloudSyncAt: input.completedAt })
+      await db.syncQueue.delete(OUTBOX_ID)
+    }
+    return result
+  })
+}
+
+async function putQueuedSnapshot(snapshot: TrainOSBackup, reason: string): Promise<void> {
+  const fingerprint = fingerprintBackup(snapshot)
+  const existing = await db.syncQueue.get(OUTBOX_ID)
+  if (existing?.fingerprint === fingerprint) return
+  const now = new Date().toISOString()
+  const entry: SyncQueueEntry = {
+    id: OUTBOX_ID, payload: snapshot, fingerprint, reason,
+    createdAt: existing?.createdAt ?? now, updatedAt: now, attemptCount: 0,
+  }
+  await db.syncQueue.put(entry)
 }
 
 async function recordConflicts(userId: string, conflicts: SnapshotConflict[], resolvedAt: string): Promise<void> {
