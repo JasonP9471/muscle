@@ -13,13 +13,36 @@ export interface AccountSnapshotRow {
 export interface DeviceSyncStore {
   queueSnapshot(reason: string): Promise<void>
   readLocal(): Promise<TrainOSBackup>
-  replaceLocal(backup: TrainOSBackup): Promise<void>
   readBaseline(userId: string): Promise<TrainOSBackup | undefined>
-  writeBaseline(userId: string, backup: TrainOSBackup, remoteUpdatedAt: string): Promise<void>
-  recordConflicts(userId: string, conflicts: SnapshotConflict[], resolvedAt: string): Promise<void>
-  markSynced(completedAt: string): Promise<void>
-  clearQueue(): Promise<void>
+  acknowledge(input: SyncAcknowledgement): Promise<SyncAcknowledgementResult>
   markQueueFailed(message: string): Promise<void>
+}
+
+export interface SyncAcknowledgement {
+  userId: string
+  expectedLocal: TrainOSBackup
+  acknowledged: TrainOSBackup
+  completedAt: string
+  conflicts: SnapshotConflict[]
+}
+
+export interface SyncAcknowledgementResult {
+  backup: TrainOSBackup
+  pending: boolean
+  conflicts: SnapshotConflict[]
+}
+
+// The device must read, reconcile, and commit this result in one transaction.
+export function reconcileAcknowledgement(current: TrainOSBackup, input: SyncAcknowledgement): SyncAcknowledgementResult {
+  const changed = fingerprintBackup(current) !== fingerprintBackup(input.expectedLocal)
+  const merged = changed
+    ? mergeSnapshots(input.expectedLocal, current, input.acknowledged)
+    : { backup: input.acknowledged, conflicts: [] }
+  return {
+    backup: merged.backup,
+    pending: fingerprintBackup(merged.backup) !== fingerprintBackup(input.acknowledged),
+    conflicts: [...input.conflicts, ...merged.conflicts],
+  }
 }
 
 export interface RemoteSnapshotStore {
@@ -50,6 +73,7 @@ export async function runAccountSync(input: {
     throw new Error('You are offline. This change is queued on this device and will sync automatically when you reconnect.')
   }
 
+  let conflicts: SnapshotConflict[] = []
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const local = await input.device.readLocal()
     const baseline = await input.device.readBaseline(input.userId)
@@ -64,21 +88,13 @@ export async function runAccountSync(input: {
     })
     if (!saved) continue
 
-    const latestLocal = await input.device.readLocal()
-    if (fingerprintBackup(latestLocal) !== fingerprintBackup(local)) {
-      await input.device.writeBaseline(input.userId, result.backup, completedAt)
-      continue
-    }
-
-    if (fingerprintBackup(latestLocal) !== fingerprintBackup(result.backup)) {
-      await input.device.replaceLocal(result.backup)
-    }
-    await input.device.markSynced(completedAt)
-    const finalBackup = await input.device.readLocal()
-    await input.device.writeBaseline(input.userId, finalBackup, completedAt)
-    await input.device.recordConflicts(input.userId, result.conflicts, completedAt)
-    await input.device.clearQueue()
-    return { direction: result.direction, backup: finalBackup, conflicts: result.conflicts, completedAt }
+    const acknowledged = await input.device.acknowledge({
+      userId: input.userId, expectedLocal: local, acknowledged: result.backup,
+      completedAt, conflicts: [...conflicts, ...result.conflicts],
+    })
+    conflicts = acknowledged.conflicts
+    if (acknowledged.pending) continue
+    return { direction: result.direction, backup: acknowledged.backup, conflicts, completedAt }
   }
 
   const message = 'Another device changed the account while this device was syncing. TrainOS kept the local queue and will retry.'

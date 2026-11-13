@@ -79,3 +79,21 @@ supabase stop --no-backup
 
 - [Supabase: Test auth flows](https://supabase.com/docs/guides/auth/testing-auth-flows)
 - [Supabase: Testing overview](https://supabase.com/docs/guides/local-development/testing/overview)
+
+## Sync acknowledgement race regression — 2026-11-13
+
+A local edit arriving after the final comparison could previously be saved as the sync baseline even though the server never received it. The next sync could then download the older server payload over that edit.
+
+Acknowledgement now reconciles the current local snapshot with the acknowledged payload inside one IndexedDB transaction covering data tables, baseline, conflict records, and outbox. The baseline always contains the exact server-acknowledged payload. Late edits remain queued and are retried; exhausting retries preserves both the local edit and its outbox entry. Snapshot reads and queue capture are transactional as well.
+
+Regression evidence:
+
+- Engine tests inject local edits during remote reads, remote writes, and acknowledgement; local meals and remote workouts survive two sync passes.
+- Retry exhaustion retains the late edit while the baseline excludes it; a subsequent sync uploads it.
+- IndexedDB tests cover late-edit reconciliation, a competing database writer, and rollback when metadata persistence fails.
+- `npm run test:auth-sync`: 33 tests pass.
+- `npm test`: 116 tests across 24 files pass.
+- Lint, TypeScript checks, and production build pass. The existing main-chunk size warning remains.
+- Browser tests remain unverified: the available Chromium cannot start because this environment denies its process-singleton socket. No application assertions ran.
+
+No production Auth settings, schema, policies, or user records were changed. This change does not address account-switch retention, unit conversion, or derived-stat recomputation from the audit.

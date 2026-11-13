@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { BACKUP_TABLE_NAMES, type TrainOSBackup } from '../../db/backup'
 import {
-  ensureDeviceOwner, runAccountSync, type AccountSnapshotRow, type DeviceSyncStore, type RemoteSnapshotStore,
+  ensureDeviceOwner, reconcileAcknowledgement, runAccountSync, type SyncAcknowledgement, type AccountSnapshotRow, type DeviceSyncStore, type RemoteSnapshotStore,
 } from './engine'
 import type { SnapshotConflict } from './merge'
 
@@ -26,15 +26,19 @@ class TestDevice implements DeviceSyncStore {
 
   async queueSnapshot(): Promise<void> { this.queued = true }
   async readLocal(): Promise<TrainOSBackup> { return structuredClone(this.local) }
-  async replaceLocal(next: TrainOSBackup): Promise<void> { this.local = structuredClone(next) }
   async readBaseline(userId: string): Promise<TrainOSBackup | undefined> {
     const value = this.baselines.get(userId)
     return value ? structuredClone(value) : undefined
   }
-  async writeBaseline(userId: string, next: TrainOSBackup): Promise<void> { this.baselines.set(userId, structuredClone(next)) }
-  async recordConflicts(_userId: string, conflicts: SnapshotConflict[]): Promise<void> { this.conflicts = structuredClone(conflicts) }
-  async markSynced(completedAt: string): Promise<void> { this.lastSyncAt = completedAt }
-  async clearQueue(): Promise<void> { this.queued = false }
+  async acknowledge(input: SyncAcknowledgement) {
+    const result = reconcileAcknowledgement(this.local, input)
+    this.local = structuredClone(result.backup)
+    this.baselines.set(input.userId, structuredClone(input.acknowledged))
+    this.conflicts = structuredClone(result.conflicts)
+    this.queued = result.pending
+    if (!result.pending) this.lastSyncAt = input.completedAt
+    return result
+  }
   async markQueueFailed(message: string): Promise<void> { this.queueAttempts += 1; this.lastError = message }
 }
 
@@ -59,6 +63,58 @@ class TestRemote implements RemoteSnapshotStore {
 const clock = () => new Date('2026-10-27T13:00:00.000Z')
 
 describe('two-device account sync engine', () => {
+  it.each(['read', 'write', 'acknowledge'] as const)('preserves a local edit arriving during %s and uploads it on retry', async (boundary) => {
+    const baseline = backup({ profiles: [{ id: 'primary', name: 'JayP' }] })
+    const device = new TestDevice(baseline, baseline)
+    const remote = new TestRemote()
+    remote.rows.set('user-a', { payload: backup({ ...baseline.tables, workouts: [{ id: 'remote-workout' }] }), backup_version: 4, source_device_id: 'phone', updated_at: '2026-10-27T12:00:00.000Z' })
+    let injected = false
+    const edit = () => {
+      if (injected) return
+      injected = true
+      device.local.tables.meals.push({ id: 'late-meal' })
+    }
+    if (boundary === 'read') {
+      const read = remote.read.bind(remote)
+      remote.read = async (userId) => { const row = await read(userId); edit(); return row }
+    } else if (boundary === 'write') {
+      const save = remote.compareAndSet.bind(remote)
+      remote.compareAndSet = async (...args) => { const saved = await save(...args); edit(); return saved }
+    } else {
+      const acknowledge = device.acknowledge.bind(device)
+      device.acknowledge = async (input) => { edit(); return acknowledge(input) }
+    }
+
+    await runAccountSync({ userId: 'user-a', deviceId: 'desktop', online: true, device, remote, now: clock })
+    await runAccountSync({ userId: 'user-a', deviceId: 'desktop', online: true, device, remote, now: clock })
+
+    expect(device.local.tables.meals).toEqual([{ id: 'late-meal' }])
+    expect(device.local.tables.workouts).toEqual([{ id: 'remote-workout' }])
+    expect(remote.rows.get('user-a')?.payload.tables.meals).toEqual([{ id: 'late-meal' }])
+    expect(device.baselines.get('user-a')?.tables.meals).toEqual([{ id: 'late-meal' }])
+    expect(device.queued).toBe(false)
+  })
+
+  it('keeps late edits queued when the retry budget is exhausted, then syncs them safely', async () => {
+    const initial = backup({ profiles: [{ id: 'primary', name: 'JayP' }] })
+    const device = new TestDevice(initial, initial)
+    const remote = new TestRemote()
+    const acknowledge = device.acknowledge.bind(device)
+    let inject = true
+    device.acknowledge = async (input) => {
+      if (inject) device.local.tables.meals.push({ id: 'late-meal' })
+      return acknowledge(input)
+    }
+    await expect(runAccountSync({ userId: 'user-a', deviceId: 'desktop', online: true, device, remote, now: clock, maxAttempts: 1 })).rejects.toThrow('queued')
+    expect(device.queued).toBe(true)
+    expect(device.baselines.get('user-a')?.tables.meals).toEqual([])
+    expect(device.local.tables.meals).toEqual([{ id: 'late-meal' }])
+    inject = false
+    await runAccountSync({ userId: 'user-a', deviceId: 'desktop', online: true, device, remote, now: clock })
+    expect(remote.rows.get('user-a')?.payload.tables.meals).toEqual([{ id: 'late-meal' }])
+    expect(device.queued).toBe(false)
+  })
+
   it('restores the account snapshot onto a fresh device', async () => {
     const remote = new TestRemote()
     remote.rows.set('user-a', {

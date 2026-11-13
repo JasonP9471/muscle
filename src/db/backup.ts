@@ -19,7 +19,9 @@ export interface TrainOSBackup {
 }
 
 export async function exportAllData(): Promise<TrainOSBackup> {
-  const entries = await Promise.all(tableNames.map(async (name) => [name, await db.table(name).toArray()] as const))
+  const entries = await db.transaction('r', tableNames.map((name) => db.table(name)), () =>
+    Promise.all(tableNames.map(async (name) => [name, await db.table(name).toArray()] as const)),
+  )
   return {
     app: 'TrainOS',
     version: BACKUP_VERSION,
